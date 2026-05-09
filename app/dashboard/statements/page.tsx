@@ -71,7 +71,7 @@ export default function StatementsPage() {
           {loadingCust ? (
             <Skeleton className="h-9 w-[220px]" />
           ) : (
-            <Select value={customer} onValueChange={setCustomer}>
+            <Select value={customer} onValueChange={(v) => { if (v) setCustomer(v) }}>
               <SelectTrigger className="h-9 text-sm">
                 <SelectValue placeholder="Select customer…" />
               </SelectTrigger>
