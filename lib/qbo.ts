@@ -1,11 +1,12 @@
 import { redis } from './redis'
 
-const TOKEN_KEY    = 'qbo:tokens'
-const CLIENT_ID    = process.env.QBO_CLIENT_ID!
-const CLIENT_SECRET = process.env.QBO_CLIENT_SECRET!
-const REDIRECT_URI = process.env.QBO_REDIRECT_URI!
-const TOKEN_URL    = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
-const BASE_URL     = 'https://quickbooks.api.intuit.com/v3/company'
+const TOKEN_KEY = 'qbo:tokens'
+const TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
+const BASE_URL  = 'https://quickbooks.api.intuit.com/v3/company'
+
+function clientId()     { return process.env.QBO_CLIENT_ID! }
+function clientSecret() { return process.env.QBO_CLIENT_SECRET! }
+function redirectUri()  { return process.env.QBO_REDIRECT_URI! }
 
 export interface QBOTokens {
   access_token: string
@@ -55,7 +56,7 @@ export async function verifyOAuthState(state: string): Promise<boolean> {
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
 function basicAuth() {
-  return 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')
+  return 'Basic ' + Buffer.from(`${clientId()}:${clientSecret()}`).toString('base64')
 }
 
 export async function saveTokens(tokens: QBOTokens) {
@@ -90,8 +91,8 @@ export async function getValidTokens(): Promise<QBOTokens> {
 
 export function getAuthUrl(state: string) {
   return `https://appcenter.intuit.com/connect/oauth2?${new URLSearchParams({
-    client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    client_id: clientId(),
+    redirect_uri: redirectUri(),
     response_type: 'code',
     scope: 'com.intuit.quickbooks.accounting',
     state,
@@ -102,7 +103,7 @@ export async function exchangeCode(code: string, realmId: string): Promise<QBOTo
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { Authorization: basicAuth(), 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI }),
+    body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri() }),
   })
   const data = await res.json()
   if (!res.ok) throw new Error(`Token exchange failed: ${JSON.stringify(data)}`)
