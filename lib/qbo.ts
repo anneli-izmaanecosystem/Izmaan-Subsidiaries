@@ -150,12 +150,12 @@ function parseReportRows(report: any): Transaction[] {
         const vals = row.ColData.map((c: any) => c.value ?? '')
         const idx = (title: string) => columns.findIndex(c => c.toLowerCase().includes(title.toLowerCase()))
         rows.push({
-          date:    vals[idx('date')]    ?? '',
-          type:    vals[idx('type')]    ?? '',
-          num:     vals[idx('num')]     ?? '',
-          memo:    vals[idx('memo')]    ?? vals[idx('name')] ?? '',
-          amount:  parseFloat(vals[idx('amount')] ?? '0') || 0,
-          balance: parseFloat(vals[idx('balance')] ?? '0') || 0,
+          date:    vals[idx('date')]       ?? '',
+          type:    vals[idx('type')]       ?? '',
+          num:     vals[idx('num')]        ?? '',
+          memo:    vals[idx('memo')]       ?? vals[idx('name')] ?? '',
+          amount:  parseFloat(vals[idx('net_amount')] ?? vals[idx('amount')] ?? '0') || 0,
+          balance: 0, // calculated after fetch
         })
       }
       if (row.Rows?.Row) walk(row.Rows.Row)
@@ -183,32 +183,40 @@ export async function getCustomerStatement(
   const customer = custData.QueryResponse?.Customer?.[0]
   if (!customer) throw new Error('Customer not found')
 
-  // Fetch transactions using the server-resolved DisplayName, not user input
+  // Fetch transactions using customer ID, without balance column (calculated below)
   const report = await qboGet('reports/TransactionList', {
     start_date: startDate,
     end_date:   endDate,
-    customer:   customer.DisplayName,
-    columns:    'tx_date,txn_type,doc_num,name,memo,amount,balance',
+    customer:   customerId,
+    columns:    'tx_date,txn_type,doc_num,name,memo,net_amount',
   })
 
-  const transactions = parseReportRows(report)
+  const rawTxs = parseReportRows(report)
+
+  // Calculate running balance from opening balance + transaction amounts
+  const closingBalance = customer.Balance ?? 0
+  const totalInPeriod  = rawTxs.reduce((sum, tx) => sum + tx.amount, 0)
+  const openingBalance = closingBalance - totalInPeriod
+
+  let running = openingBalance
+  const transactions = rawTxs.map(tx => {
+    running += tx.amount
+    return { ...tx, balance: running }
+  })
 
   // Ageing calculation (based on today vs transaction date)
   const today = new Date()
   const ageing = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
   for (const tx of transactions) {
-    if (tx.amount <= 0) continue // only charges age
+    if (tx.amount <= 0) continue
     const txDate = new Date(tx.date)
     const days = Math.floor((today.getTime() - txDate.getTime()) / 86_400_000)
-    if (days <= 30)      ageing.current += tx.amount
-    else if (days <= 60) ageing.days30  += tx.amount
-    else if (days <= 90) ageing.days60  += tx.amount
-    else if (days <= 120) ageing.days90 += tx.amount
-    else                  ageing.over90 += tx.amount
+    if (days <= 30)       ageing.current += tx.amount
+    else if (days <= 60)  ageing.days30  += tx.amount
+    else if (days <= 90)  ageing.days60  += tx.amount
+    else if (days <= 120) ageing.days90  += tx.amount
+    else                  ageing.over90  += tx.amount
   }
-
-  const openingBalance = transactions.length > 0 ? transactions[0].balance - transactions[0].amount : 0
-  const closingBalance = customer.Balance ?? 0
 
   return {
     customer: { name: customer.DisplayName, balance: closingBalance },
