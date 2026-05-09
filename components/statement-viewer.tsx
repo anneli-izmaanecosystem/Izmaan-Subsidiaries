@@ -1,11 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { CustomerStatement } from '@/lib/qbo'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Printer } from 'lucide-react'
+import { Printer, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { downloadStatementPdf } from '@/components/statement-pdf'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR' }).format(n)
@@ -18,6 +20,12 @@ function fmtDate(d: string) {
 
 export function StatementViewer({ statement }: { statement: CustomerStatement }) {
   const { customer, period, openingBalance, transactions, closingBalance, ageing } = statement
+  const [downloading, setDownloading] = useState(false)
+
+  async function handleDownload() {
+    setDownloading(true)
+    try { await downloadStatementPdf(statement) } finally { setDownloading(false) }
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
@@ -33,6 +41,10 @@ export function StatementViewer({ statement }: { statement: CustomerStatement })
           <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
             <Printer size={14} />
             Print
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading} className="gap-2">
+            <Download size={14} />
+            {downloading ? 'Preparing…' : 'Download PDF'}
           </Button>
           <div className="text-right">
             <p className="text-xs text-gray-400 uppercase tracking-wide">Amount Due</p>
