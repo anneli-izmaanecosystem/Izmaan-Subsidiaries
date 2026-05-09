@@ -49,8 +49,9 @@ export async function saveOAuthState(state: string) {
 }
 
 export async function verifyOAuthState(state: string): Promise<boolean> {
-  const val = await redis.getdel(`${STATE_PREFIX}${state}`)
-  return val === '1'
+  const key = `${STATE_PREFIX}${state}`
+  const val = await redis.getdel(key)
+  return val !== null && val !== undefined
 }
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
