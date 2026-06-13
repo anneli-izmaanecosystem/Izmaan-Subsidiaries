@@ -140,22 +140,40 @@ export async function listCustomers(): Promise<QBOCustomer[]> {
 
 // ── Customer Statement ────────────────────────────────────────────────────────
 
+// Transaction types that reduce AR balance (should be shown as negative)
+const CREDIT_TYPES = ['payment', 'credit memo', 'credit card credit', 'refund receipt', 'journal entry']
+
 function parseReportRows(report: any): Transaction[] {
-  const columns: string[] = report.Columns?.Column?.map((c: any) => c.ColTitle ?? c.ColType) ?? []
+  const cols: any[] = report.Columns?.Column ?? []
   const rows: Transaction[] = []
+
+  // Match by ColType first (exact, normalised), then fall back to ColTitle contains
+  function getIdx(key: string): number {
+    const norm = key.toLowerCase().replace(/_/g, ' ')
+    let i = cols.findIndex((c: any) => (c.ColType ?? '').toLowerCase().replace(/_/g, ' ') === norm)
+    if (i === -1) i = cols.findIndex((c: any) => (c.ColTitle ?? '').toLowerCase().includes(norm))
+    return i
+  }
 
   function walk(rowArray: any[]) {
     for (const row of rowArray) {
       if (row.type === 'Data' && row.ColData) {
-        const vals = row.ColData.map((c: any) => c.value ?? '')
-        const idx = (title: string) => columns.findIndex(c => c.toLowerCase().includes(title.toLowerCase()))
+        const vals    = row.ColData.map((c: any) => c.value ?? '')
+        const txType  = vals[getIdx('txn_type')] ?? ''
+        const rawAmt  = parseFloat(vals[getIdx('net_amount')] ?? '0') || 0
+        const qboBal  = parseFloat(vals[getIdx('balance')]    ?? 'NaN')
+
+        // Ensure credits (payments, credit memos, etc.) are always negative
+        const isCredit = CREDIT_TYPES.some(t => txType.toLowerCase().includes(t))
+        const amount   = isCredit ? -Math.abs(rawAmt) : Math.abs(rawAmt)
+
         rows.push({
-          date:    vals[idx('date')]       ?? '',
-          type:    vals[idx('type')]       ?? '',
-          num:     vals[idx('num')]        ?? '',
-          memo:    vals[idx('memo')]       ?? vals[idx('name')] ?? '',
-          amount:  parseFloat(vals[idx('net_amount')] ?? vals[idx('amount')] ?? '0') || 0,
-          balance: 0, // calculated after fetch
+          date:    vals[getIdx('tx_date')]  ?? '',
+          type:    txType,
+          num:     vals[getIdx('doc_num')]  ?? '',
+          memo:    vals[getIdx('memo')]     ?? vals[getIdx('name')] ?? '',
+          amount,
+          balance: isNaN(qboBal) ? 0 : qboBal, // use QBO's own balance if available
         })
       }
       if (row.Rows?.Row) walk(row.Rows.Row)
@@ -183,26 +201,43 @@ export async function getCustomerStatement(
   const customer = custData.QueryResponse?.Customer?.[0]
   if (!customer) throw new Error('Customer not found')
 
-  // Fetch transactions using customer ID, without balance column (calculated below)
+  // Fetch transactions — include QBO's own balance column for accurate running totals
   const report = await qboGet('reports/TransactionList', {
     start_date: startDate,
     end_date:   endDate,
     customer:   customerId,
-    columns:    'tx_date,txn_type,doc_num,name,memo,net_amount',
+    columns:    'tx_date,txn_type,doc_num,name,memo,net_amount,balance',
   })
 
   const rawTxs = parseReportRows(report)
 
-  // Calculate running balance from opening balance + transaction amounts
-  const closingBalance = customer.Balance ?? 0
-  const totalInPeriod  = rawTxs.reduce((sum, tx) => sum + tx.amount, 0)
-  const openingBalance = closingBalance - totalInPeriod
+  // Use QBO's own balance column if available (most accurate).
+  // Otherwise fall back to deriving from customer.Balance (today's live balance).
+  const hasQBOBalance = rawTxs.length > 0 && rawTxs[rawTxs.length - 1].balance !== 0
+  let openingBalance: number
+  let transactions: Transaction[]
 
-  let running = openingBalance
-  const transactions = rawTxs.map(tx => {
-    running += tx.amount
-    return { ...tx, balance: running }
-  })
+  if (hasQBOBalance) {
+    // QBO balance column is per-row running balance — opening is balance before first tx
+    const firstBal = rawTxs[0]?.balance ?? 0
+    const firstAmt = rawTxs[0]?.amount  ?? 0
+    openingBalance = firstBal - firstAmt
+    transactions   = rawTxs // balances already set from QBO
+  } else {
+    // Fallback: derive from customer's live balance
+    const closingBalance = customer.Balance ?? 0
+    const totalInPeriod  = rawTxs.reduce((sum, tx) => sum + tx.amount, 0)
+    openingBalance = closingBalance - totalInPeriod
+    let running = openingBalance
+    transactions = rawTxs.map(tx => {
+      running += tx.amount
+      return { ...tx, balance: running }
+    })
+  }
+
+  const closingBalance = transactions.length > 0
+    ? transactions[transactions.length - 1].balance
+    : openingBalance
 
   // Ageing calculation (based on today vs transaction date)
   const today = new Date()
