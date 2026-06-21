@@ -3,6 +3,7 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/api/qbo/callback(.*)',
+  '/api/labour-link/whatsapp/webhook(.*)',
 ])
 
 export default clerkMiddleware(async (auth, req) => {
