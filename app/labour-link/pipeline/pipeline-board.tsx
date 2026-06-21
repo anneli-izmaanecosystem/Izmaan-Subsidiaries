@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, type FormEvent } from 'react'
 import { Search, Plus, X } from 'lucide-react'
 import type { Lead, LeadStage, LeadType, Priority } from '@/lib/ll-types'
 import { LeadModal } from './lead-modal'
@@ -210,6 +210,163 @@ function KiepersrolList({ farms, totalContacted, totalFarms, onToggle }: KiepPro
   )
 }
 
+// ─── Add Lead modal ───────────────────────────────────────────────────────────
+interface AddLeadModalProps {
+  pipeline: 'll' | 'sl' | 'kiepersol'
+  onClose: () => void
+  onCreate: (lead: Lead) => void
+}
+
+function AddLeadModal({ pipeline, onClose, onCreate }: AddLeadModalProps) {
+  const [name,     setName]     = useState('')
+  const [contact,  setContact]  = useState('')
+  const [phone,    setPhone]    = useState('')
+  const [area,     setArea]     = useState('')
+  const [stage,    setStage]    = useState<LeadStage>('New Lead')
+  const [priority, setPriority] = useState<Priority>('medium')
+  const [saving,   setSaving]   = useState(false)
+  const [error,    setError]    = useState('')
+
+  const stages = pipeline === 'sl' ? STAGES_SL : STAGES_LL
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) { setError('Name is required'); return }
+    setSaving(true); setError('')
+
+    const res = await fetch('/api/labour-link/leads', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ type: pipeline, lead: { name: name.trim(), contact, phone, area, stage, priority } }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setError(data.error ?? 'Failed to create lead'); setSaving(false); return }
+    onCreate(data)
+    onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(30,35,60,0.45)] p-6" onClick={onClose}>
+      <div
+        className="relative w-full max-w-[480px] rounded-2xl border border-[rgba(0,0,0,0.14)] bg-white font-[family-name:var(--font-dm-mono)]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="border-b border-[rgba(0,0,0,0.08)] p-6 pb-4">
+          <button onClick={onClose} className="absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-full border border-[rgba(0,0,0,0.08)] bg-[#f5f6f8] text-gray-400 hover:text-gray-700">
+            <X size={14} />
+          </button>
+          <h2 className="font-[family-name:var(--font-syne)] text-[18px] font-bold text-gray-900">New Lead</h2>
+          <p className="text-[11px] text-gray-400">
+            {pipeline === 'll' ? 'Labour Link' : pipeline === 'sl' ? 'Safe Link' : 'Kiepersol'} pipeline
+          </p>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
+          <div>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-gray-400">Farm / Company Name *</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Boerdery van der Merwe"
+              className="w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] focus:border-[#3a6bef] focus:outline-none focus:ring-2 focus:ring-[rgba(58,107,239,0.08)]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-gray-400">Contact Person</label>
+              <input
+                value={contact}
+                onChange={e => setContact(e.target.value)}
+                placeholder="e.g. Jan van der Merwe"
+                className="w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] focus:border-[#3a6bef] focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-gray-400">Phone</label>
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="e.g. 082 123 4567"
+                className="w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] focus:border-[#3a6bef] focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-gray-400">Area</label>
+            <input
+              value={area}
+              onChange={e => setArea(e.target.value)}
+              placeholder="e.g. Limpopo, Tzaneen"
+              className="w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] focus:border-[#3a6bef] focus:outline-none"
+            />
+          </div>
+
+          {pipeline !== 'kiepersol' && (
+            <div>
+              <label className="mb-2 block text-[10px] uppercase tracking-widest text-gray-400">Stage</label>
+              <div className="flex flex-wrap gap-1.5">
+                {stages.map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStage(s)}
+                    className={cn(
+                      'rounded-full border px-2.5 py-1 text-[11px] transition-all',
+                      stage === s
+                        ? 'border-current bg-current/10'
+                        : 'border-[rgba(0,0,0,0.12)] text-gray-500 hover:border-[#3a6bef] hover:text-[#3a6bef]',
+                    )}
+                    style={stage === s ? { borderColor: STAGE_COLORS[s], color: STAGE_COLORS[s], background: `${STAGE_COLORS[s]}18` } : {}}
+                  >{s}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-2 block text-[10px] uppercase tracking-widest text-gray-400">Priority</label>
+            <div className="flex gap-1.5">
+              {(['high', 'medium', 'low'] as Priority[]).map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPriority(p)}
+                  className={cn(
+                    'rounded-full border px-2.5 py-1 text-[11px] capitalize transition-all',
+                    priority === p
+                      ? p === 'high'   ? 'border-[#d93f3f] bg-[rgba(217,63,63,0.1)] text-[#d93f3f]'
+                      : p === 'medium' ? 'border-[#d4860a] bg-[rgba(212,134,10,0.1)] text-[#d4860a]'
+                      :                  'border-[#7a8199] bg-[rgba(122,129,153,0.1)] text-[#7a8199]'
+                      : 'border-[rgba(0,0,0,0.12)] text-gray-500 hover:bg-[#f5f6f8]',
+                  )}
+                >{p}</button>
+              ))}
+            </div>
+          </div>
+
+          {error && <p className="text-[11px] text-[#d93f3f]">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="rounded-lg border border-[rgba(0,0,0,0.12)] px-4 py-1.5 text-[12px] text-gray-500 hover:bg-[#f5f6f8] transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || !name.trim()}
+              className="rounded-lg bg-[#3a6bef] px-4 py-1.5 text-[12px] text-white hover:opacity-85 disabled:opacity-50 transition-opacity">
+              {saving ? 'Adding…' : 'Add Lead'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 type Tab = 'll' | 'sl' | 'kiepersol'
 
@@ -221,15 +378,22 @@ interface Props {
 }
 
 export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: initKiep, waConfigured }: Props) {
-  const [tab,       setTab]       = useState<Tab>('ll')
-  const [leadsLL,   setLeadsLL]   = useState(initLL)
-  const [leadsSL,   setLeadsSL]   = useState(initSL)
-  const [kiepersol, setKiepersol] = useState(initKiep)
-  const [query,     setQuery]     = useState('')
+  const [tab,        setTab]        = useState<Tab>('ll')
+  const [leadsLL,    setLeadsLL]    = useState(initLL)
+  const [leadsSL,    setLeadsSL]    = useState(initSL)
+  const [kiepersol,  setKiepersol]  = useState(initKiep)
+  const [query,      setQuery]      = useState('')
+  const [addingLead, setAddingLead] = useState(false)
 
   function updateLeads(type: LeadType, id: string, updates: Partial<Lead>) {
     if (type === 'll') setLeadsLL(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
     if (type === 'sl') setLeadsSL(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
+  }
+
+  function addLead(lead: Lead) {
+    if (lead.type === 'll')        setLeadsLL(prev => [...prev, lead])
+    if (lead.type === 'sl')        setLeadsSL(prev => [...prev, lead])
+    if (lead.type === 'kiepersol') setKiepersol(prev => [...prev, lead])
   }
 
   async function toggleKiep(id: string, contacted: boolean) {
@@ -317,6 +481,12 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
             {filteredLL.length + filteredSL.length + filteredKiep.length} result{filteredLL.length + filteredSL.length + filteredKiep.length !== 1 ? 's' : ''}
           </span>
         )}
+        <button
+          onClick={() => setAddingLead(true)}
+          className="ml-auto flex items-center gap-1.5 rounded-lg bg-[#3a6bef] px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-85 transition-opacity"
+        >
+          <Plus size={12} /> New Lead
+        </button>
       </div>
 
       {tab === 'll' && (
@@ -331,6 +501,14 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
           totalContacted={kiepersol.filter(f => f.contacted).length}
           totalFarms={kiepersol.length}
           onToggle={toggleKiep}
+        />
+      )}
+
+      {addingLead && (
+        <AddLeadModal
+          pipeline={tab}
+          onClose={() => setAddingLead(false)}
+          onCreate={addLead}
         />
       )}
     </div>
