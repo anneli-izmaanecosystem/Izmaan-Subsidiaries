@@ -1,4 +1,5 @@
 import { redis } from './redis'
+import type { LeadType } from './ll-types'
 
 export interface WAMessage {
   id: string
@@ -105,12 +106,20 @@ export async function updateMessageStatus(
 
 // Find lead ID by phone number (searches all lead types)
 export async function findLeadIdByPhone(phone: string): Promise<string | null> {
+  const match = await findLeadByPhone(phone)
+  return match?.leadId ?? null
+}
+
+// Find lead ID + type by phone number — needed for webhook handlers
+export async function findLeadByPhone(
+  phone: string,
+): Promise<{ leadId: string; leadType: LeadType } | null> {
   const { getLeads } = await import('./ll-db')
   const digits = phoneDigits(phone)
   for (const type of ['ll', 'sl', 'kiepersol'] as const) {
     const leads = await getLeads(type)
     const lead = leads.find(l => l.phone && phoneDigits(l.phone) === digits)
-    if (lead) return lead.id
+    if (lead) return { leadId: lead.id, leadType: type }
   }
   return null
 }

@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Search } from 'lucide-react'
-import type { Lead, LeadStage, LeadType } from '@/lib/ll-types'
+import { Search, Plus, X } from 'lucide-react'
+import type { Lead, LeadStage, LeadType, Priority } from '@/lib/ll-types'
 import { LeadModal } from './lead-modal'
 import { cn } from '@/lib/utils'
 
@@ -23,24 +23,64 @@ function daysSince(dateStr: string) {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000)
 }
 
+// ─── Kanban board ─────────────────────────────────────────────────────────────
 interface KanbanProps {
-  leads: Lead[]
-  pipeline: 'll' | 'sl'
+  leads:       Lead[]
+  pipeline:    'll' | 'sl'
   waConfigured: boolean
-  onUpdate: (id: string, updates: Partial<Lead>) => void
+  onUpdate:    (id: string, updates: Partial<Lead>) => void
 }
 
 function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
-  const [selected, setSelected] = useState<Lead | null>(null)
+  const [selected,      setSelected]      = useState<Lead | null>(null)
+  const [draggedId,     setDraggedId]     = useState<string | null>(null)
+  const [dragOverStage, setDragOverStage] = useState<LeadStage | null>(null)
+
   const stages = pipeline === 'll' ? STAGES_LL : STAGES_SL
+
+  function handleDrop(toStage: LeadStage) {
+    if (!draggedId) return
+    const lead = leads.find(l => l.id === draggedId)
+    if (!lead || lead.stage === toStage) { setDragOverStage(null); return }
+
+    // Optimistic update
+    onUpdate(draggedId, { stage: toStage })
+
+    fetch('/api/labour-link/leads', {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ type: pipeline, id: draggedId, updates: { stage: toStage } }),
+    })
+
+    setDraggedId(null)
+    setDragOverStage(null)
+  }
 
   return (
     <>
       <div className="grid grid-cols-5 gap-2.5">
         {stages.map(stage => {
           const stageLeads = leads.filter(l => l.stage === stage)
+          const isOver     = dragOverStage === stage && draggedId !== null
+
           return (
-            <div key={stage} className="min-h-[400px] rounded-xl border border-[rgba(0,0,0,0.08)] bg-white p-3">
+            <div
+              key={stage}
+              className={cn(
+                'min-h-[400px] rounded-xl border p-3 transition-colors duration-100',
+                isOver
+                  ? 'border-[#3a6bef] bg-[rgba(58,107,239,0.04)]'
+                  : 'border-[rgba(0,0,0,0.08)] bg-white',
+              )}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverStage(stage) }}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverStage(null)
+                }
+              }}
+              onDrop={() => handleDrop(stage)}
+            >
+              {/* Column header */}
               <div className="mb-3 flex items-center justify-between">
                 <span className="text-[10px] uppercase tracking-widest text-gray-400">{stage}</span>
                 <span
@@ -51,16 +91,35 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
                 </span>
               </div>
 
+              {/* Drop target hint on empty column */}
+              {isOver && stageLeads.length === 0 && (
+                <div className="rounded-lg border-2 border-dashed border-[rgba(58,107,239,0.35)] p-4 text-center text-[11px] text-[#3a6bef]/50">
+                  Drop here
+                </div>
+              )}
+
               <div className="space-y-2">
                 {stageLeads.map(l => {
-                  const days = daysSince(l.lastContact)
-                  const overdue = days > 14 && stage !== 'Active Client'
+                  const days      = daysSince(l.lastContact)
+                  const overdue   = days > 14 && stage !== 'Active Client'
+                  const isDragging = draggedId === l.id
+
                   return (
                     <div
                       key={l.id}
+                      draggable
+                      onDragStart={e => {
+                        e.dataTransfer.effectAllowed = 'move'
+                        e.dataTransfer.setData('text/plain', l.id)
+                        setDraggedId(l.id)
+                      }}
+                      onDragEnd={() => { setDraggedId(null); setDragOverStage(null) }}
                       onClick={() => setSelected(l)}
                       className={cn(
-                        'cursor-pointer rounded-lg border p-2.5 transition-all hover:shadow-sm',
+                        'rounded-lg border p-2.5 transition-all select-none',
+                        isDragging
+                          ? 'cursor-grabbing opacity-40 shadow-none'
+                          : 'cursor-grab hover:shadow-sm active:cursor-grabbing',
                         overdue
                           ? 'border-[rgba(217,63,63,0.3)] bg-[rgba(217,63,63,0.03)] hover:border-[rgba(217,63,63,0.5)]'
                           : 'border-[rgba(0,0,0,0.08)] bg-[#f5f6f8] hover:border-[rgba(0,0,0,0.14)] hover:bg-[#eaedf1]',
@@ -104,10 +163,10 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
 
 // ─── Kiepersol checklist ──────────────────────────────────────────────────────
 interface KiepProps {
-  farms: Lead[]
+  farms:          Lead[]
   totalContacted: number
-  totalFarms: number
-  onToggle: (id: string, contacted: boolean) => void
+  totalFarms:     number
+  onToggle:       (id: string, contacted: boolean) => void
 }
 
 function KiepersrolList({ farms, totalContacted, totalFarms, onToggle }: KiepProps) {
@@ -155,18 +214,18 @@ function KiepersrolList({ farms, totalContacted, totalFarms, onToggle }: KiepPro
 type Tab = 'll' | 'sl' | 'kiepersol'
 
 interface Props {
-  leadsLL: Lead[]
-  leadsSL: Lead[]
-  kiepersol: Lead[]
+  leadsLL:     Lead[]
+  leadsSL:     Lead[]
+  kiepersol:   Lead[]
   waConfigured: boolean
 }
 
 export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: initKiep, waConfigured }: Props) {
-  const [tab, setTab] = useState<Tab>('ll')
-  const [leadsLL, setLeadsLL] = useState(initLL)
-  const [leadsSL, setLeadsSL] = useState(initSL)
+  const [tab,       setTab]       = useState<Tab>('ll')
+  const [leadsLL,   setLeadsLL]   = useState(initLL)
+  const [leadsSL,   setLeadsSL]   = useState(initSL)
   const [kiepersol, setKiepersol] = useState(initKiep)
-  const [query, setQuery] = useState('')
+  const [query,     setQuery]     = useState('')
 
   function updateLeads(type: LeadType, id: string, updates: Partial<Lead>) {
     if (type === 'll') setLeadsLL(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
@@ -176,9 +235,9 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
   async function toggleKiep(id: string, contacted: boolean) {
     setKiepersol(prev => prev.map(f => f.id === id ? { ...f, contacted } : f))
     await fetch('/api/labour-link/leads', {
-      method: 'PATCH',
+      method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'kiepersol', id, updates: { contacted } }),
+      body:    JSON.stringify({ type: 'kiepersol', id, updates: { contacted } }),
     })
   }
 
@@ -221,7 +280,7 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
 
   return (
     <div>
-      {/* Search + Tabs row */}
+      {/* Search + Tabs */}
       <div className="mb-5 flex items-center gap-3">
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />

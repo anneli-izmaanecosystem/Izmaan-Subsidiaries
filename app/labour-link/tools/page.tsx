@@ -57,8 +57,8 @@ export default function ToolsPage() {
                     <li>Copy the <strong>Phone Number ID</strong> and <strong>WhatsApp Business Account ID</strong></li>
                     <li>Generate a <strong>System User access token</strong> in Meta Business Suite with <code>whatsapp_business_messaging</code> permission</li>
                     <li>Add all four env vars to your Vercel project (Settings → Environment Variables)</li>
-                    <li>Set webhook URL to <code>https://your-domain.vercel.app/api/whatsapp/webhook</code> with your verify token</li>
-                    <li>Subscribe to <strong>messages</strong> and <strong>message_status_updates</strong> fields</li>
+                    <li>Set webhook URL to <code>https://your-domain.vercel.app/api/labour-link/whatsapp/webhook</code> with your verify token</li>
+                    <li>Subscribe to <strong>messages</strong> and <strong>message_status_updates</strong> webhook fields</li>
                   </ol>
                 </div>
               </div>
