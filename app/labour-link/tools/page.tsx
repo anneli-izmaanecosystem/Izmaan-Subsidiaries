@@ -1,12 +1,14 @@
-import { TEMPLATES } from '@/lib/ll-templates'
-import { TemplateCard } from './template-card'
+import { getTemplates } from '@/lib/ll-db'
+import { ToolsClient } from './tools-client'
 
-export default function ToolsPage() {
+export default async function ToolsPage() {
   const waConfigured = !!(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID)
   const phoneIdSet   = !!process.env.WHATSAPP_PHONE_NUMBER_ID
   const wabaIdSet    = !!process.env.WHATSAPP_WABA_ID
   const tokenSet     = !!process.env.WHATSAPP_ACCESS_TOKEN
   const webhookSet   = !!process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN
+
+  const templates = await getTemplates()
 
   return (
     <div className="p-6 font-[family-name:var(--font-dm-mono)]">
@@ -67,16 +69,8 @@ export default function ToolsPage() {
         </div>
       </div>
 
-      {/* Template grid */}
-      <div className="mb-4">
-        <p className="font-[family-name:var(--font-syne)] text-[14px] font-semibold text-gray-800">WhatsApp Templates</p>
-        <p className="text-[11px] text-gray-400">Click Copy to paste into a chat, or use them from the lead card WhatsApp tab</p>
-      </div>
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
-        {TEMPLATES.map(t => (
-          <TemplateCard key={t.id} label={t.label} text={t.text} />
-        ))}
-      </div>
+      {/* Template grid — client component owns add/edit/delete */}
+      <ToolsClient initialTemplates={templates} />
     </div>
   )
 }

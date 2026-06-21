@@ -33,6 +33,29 @@ export interface KPIEntry {
   actual: number
 }
 
+export type SLOnboardingStage = 'info-requested' | 'info-received' | 'setup' | 'onboarded'
+
+export interface SLAdmin {
+  id: string
+  name: string
+  email: string
+  phone: string
+  subDistrict: string
+}
+
+export interface SLOnboardingRecord {
+  id: string
+  orgName: string
+  district: string
+  contactName: string
+  contactPhone: string
+  stage: SLOnboardingStage
+  admins: SLAdmin[]
+  notes: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface ActionItem {
   id: string
   title: string

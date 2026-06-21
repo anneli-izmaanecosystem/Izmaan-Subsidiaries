@@ -1,5 +1,6 @@
 import { redis } from './redis'
-import type { Lead, KPIEntry } from './ll-types'
+import type { Lead, KPIEntry, SLOnboardingRecord } from './ll-types'
+import { TEMPLATES, type Template } from './ll-templates'
 
 // ─── Redis keys ───────────────────────────────────────────────────────────────
 const KEYS = {
@@ -62,6 +63,53 @@ export async function toggleActionChecked(id: string): Promise<boolean> {
   checked[id] = !checked[id]
   await redis.set(KEYS.checked, checked)
   return !!checked[id]
+}
+
+// ─── Templates ────────────────────────────────────────────────────────────────
+const TEMPLATES_KEY = 'll:templates'
+
+export async function getTemplates(): Promise<Template[]> {
+  const stored = await redis.get<Template[]>(TEMPLATES_KEY)
+  if (stored && stored.length > 0) return stored
+  await redis.set(TEMPLATES_KEY, TEMPLATES)
+  return TEMPLATES
+}
+
+export async function setTemplates(templates: Template[]): Promise<void> {
+  await redis.set(TEMPLATES_KEY, templates)
+}
+
+export async function upsertTemplate(template: Template): Promise<void> {
+  const templates = await getTemplates()
+  const i = templates.findIndex(t => t.id === template.id)
+  if (i === -1) templates.push(template)
+  else templates[i] = template
+  await setTemplates(templates)
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const templates = await getTemplates()
+  await setTemplates(templates.filter(t => t.id !== id))
+}
+
+// ─── SafeLink Onboarding ──────────────────────────────────────────────────────
+const OB_KEY = 'sl:onboarding'
+
+export async function getOnboardingRecords(): Promise<SLOnboardingRecord[]> {
+  return (await redis.get<SLOnboardingRecord[]>(OB_KEY)) ?? []
+}
+
+export async function upsertOnboardingRecord(record: SLOnboardingRecord): Promise<void> {
+  const records = await getOnboardingRecords()
+  const i = records.findIndex(r => r.id === record.id)
+  if (i === -1) records.push(record)
+  else records[i] = record
+  await redis.set(OB_KEY, records)
+}
+
+export async function deleteOnboardingRecord(id: string): Promise<void> {
+  const records = await getOnboardingRecords()
+  await redis.set(OB_KEY, records.filter(r => r.id !== id))
 }
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────
