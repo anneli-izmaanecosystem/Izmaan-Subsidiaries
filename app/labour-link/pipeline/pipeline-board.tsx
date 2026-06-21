@@ -6,8 +6,8 @@ import type { Lead, LeadStage, LeadType, Priority } from '@/lib/ll-types'
 import { LeadModal } from './lead-modal'
 import { cn } from '@/lib/utils'
 
-const STAGES_LL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Onboarding', 'Active Client']
-const STAGES_SL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Implementing', 'Active Client']
+const STAGES_LL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Onboarding', 'Active Client', 'Churned']
+const STAGES_SL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Implementing', 'Active Client', 'Churned']
 
 const STAGE_COLORS: Record<string, string> = {
   'New Lead':     '#7a8199',
@@ -16,6 +16,7 @@ const STAGE_COLORS: Record<string, string> = {
   'Onboarding':   '#d4860a',
   'Implementing': '#d4860a',
   'Active Client':'#18a86b',
+  'Churned':      '#9ca3af',
 }
 
 function daysSince(dateStr: string) {
@@ -28,10 +29,11 @@ interface KanbanProps {
   leads:       Lead[]
   pipeline:    'll' | 'sl'
   waConfigured: boolean
-  onUpdate:    (id: string, updates: Partial<Lead>) => void
+  onUpdate:    (id: string, updates: Partial<Lead>, movedLead?: Lead) => void
+  onRemove:    (id: string) => void
 }
 
-function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
+function KanbanBoard({ leads, pipeline, waConfigured, onUpdate, onRemove }: KanbanProps) {
   const [selected,      setSelected]      = useState<Lead | null>(null)
   const [draggedId,     setDraggedId]     = useState<string | null>(null)
   const [dragOverStage, setDragOverStage] = useState<LeadStage | null>(null)
@@ -58,10 +60,11 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
 
   return (
     <>
-      <div className="grid grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-6 gap-2.5">
         {stages.map(stage => {
           const stageLeads = leads.filter(l => l.stage === stage)
           const isOver     = dragOverStage === stage && draggedId !== null
+          const isChurned  = stage === 'Churned'
 
           return (
             <div
@@ -70,6 +73,8 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
                 'min-h-[400px] rounded-xl border p-3 transition-colors duration-100',
                 isOver
                   ? 'border-[#3a6bef] bg-[rgba(58,107,239,0.04)]'
+                  : isChurned
+                  ? 'border-[rgba(0,0,0,0.05)] bg-[rgba(0,0,0,0.015)]'
                   : 'border-[rgba(0,0,0,0.08)] bg-white',
               )}
               onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverStage(stage) }}
@@ -100,8 +105,8 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
 
               <div className="space-y-2">
                 {stageLeads.map(l => {
-                  const days      = daysSince(l.lastContact)
-                  const overdue   = days > 14 && stage !== 'Active Client'
+                  const days       = daysSince(l.lastContact)
+                  const overdue    = days > 14 && stage !== 'Active Client' && stage !== 'Churned'
                   const isDragging = draggedId === l.id
 
                   return (
@@ -120,22 +125,29 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
                         isDragging
                           ? 'cursor-grabbing opacity-40 shadow-none'
                           : 'cursor-grab hover:shadow-sm active:cursor-grabbing',
-                        overdue
+                        isChurned
+                          ? 'border-[rgba(0,0,0,0.06)] bg-white/60 opacity-70 hover:opacity-100'
+                          : overdue
                           ? 'border-[rgba(217,63,63,0.3)] bg-[rgba(217,63,63,0.03)] hover:border-[rgba(217,63,63,0.5)]'
                           : 'border-[rgba(0,0,0,0.08)] bg-[#f5f6f8] hover:border-[rgba(0,0,0,0.14)] hover:bg-[#eaedf1]',
                       )}
                     >
-                      <p className="text-[12px] font-medium text-gray-900">{l.name}</p>
+                      <p className={cn('text-[12px] font-medium', isChurned ? 'text-gray-400' : 'text-gray-900')}>{l.name}</p>
                       <p className="text-[11px] text-gray-400">{l.contact}</p>
-                      {l.phone && (
+                      {l.phone && !isChurned && (
                         <p className="mt-1 text-[10px] text-[#18a86b]">📱 {l.phone}</p>
                       )}
-                      {l.blocker && (
+                      {l.churnReason && isChurned && (
+                        <p className="mt-1 truncate text-[10px] text-[#9ca3af]">↳ {l.churnReason}</p>
+                      )}
+                      {l.blocker && !isChurned && (
                         <p className="mt-1 truncate text-[10px] text-[#d4860a]">⚠ {l.blocker.slice(0, 30)}</p>
                       )}
-                      <p className="mt-1 text-[10px] text-gray-400">
-                        {days < 9999 ? `${days}d ago` : 'not contacted'}
-                      </p>
+                      {!isChurned && (
+                        <p className="mt-1 text-[10px] text-gray-400">
+                          {days < 9999 ? `${days}d ago` : 'not contacted'}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
@@ -151,10 +163,11 @@ function KanbanBoard({ leads, pipeline, waConfigured, onUpdate }: KanbanProps) {
           pipeline={pipeline}
           waConfigured={waConfigured}
           onClose={() => setSelected(null)}
-          onUpdate={(id, updates) => {
-            onUpdate(id, updates)
-            setSelected(prev => prev ? { ...prev, ...updates } : null)
+          onUpdate={(id, updates, movedLead) => {
+            onUpdate(id, updates, movedLead)
+            if (!movedLead) setSelected(prev => prev ? { ...prev, ...updates } : null)
           }}
+          onRemove={() => { onRemove(selected.id); setSelected(null) }}
         />
       )}
     </>
@@ -385,7 +398,16 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
   const [query,      setQuery]      = useState('')
   const [addingLead, setAddingLead] = useState(false)
 
-  function updateLeads(type: LeadType, id: string, updates: Partial<Lead>) {
+  function updateLeads(type: LeadType, id: string, updates: Partial<Lead>, movedLead?: Lead) {
+    const newType = updates.type as LeadType | undefined
+    if (newType && newType !== type && movedLead) {
+      if (type === 'll')        setLeadsLL(prev => prev.filter(l => l.id !== id))
+      if (type === 'sl')        setLeadsSL(prev => prev.filter(l => l.id !== id))
+      if (newType === 'll')        setLeadsLL(prev => [...prev, movedLead])
+      if (newType === 'sl')        setLeadsSL(prev => [...prev, movedLead])
+      if (newType === 'kiepersol') setKiepersol(prev => [...prev, movedLead])
+      return
+    }
     if (type === 'll') setLeadsLL(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
     if (type === 'sl') setLeadsSL(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l))
   }
@@ -394,6 +416,11 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
     if (lead.type === 'll')        setLeadsLL(prev => [...prev, lead])
     if (lead.type === 'sl')        setLeadsSL(prev => [...prev, lead])
     if (lead.type === 'kiepersol') setKiepersol(prev => [...prev, lead])
+  }
+
+  function removeLead(type: LeadType, id: string) {
+    if (type === 'll') setLeadsLL(prev => prev.filter(l => l.id !== id))
+    if (type === 'sl') setLeadsSL(prev => prev.filter(l => l.id !== id))
   }
 
   async function toggleKiep(id: string, contacted: boolean) {
@@ -437,8 +464,8 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
   )
 
   const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: 'll',        label: 'Labour Link', count: filteredLL.filter(l => l.stage !== 'Active Client').length },
-    { key: 'sl',        label: 'Safe Link',   count: filteredSL.filter(l => l.stage !== 'Active Client').length },
+    { key: 'll',        label: 'Labour Link', count: filteredLL.filter(l => l.stage !== 'Active Client' && l.stage !== 'Churned').length },
+    { key: 'sl',        label: 'Safe Link',   count: filteredSL.filter(l => l.stage !== 'Active Client' && l.stage !== 'Churned').length },
     { key: 'kiepersol', label: 'Kiepersol',   count: filteredKiep.filter(k => !k.contacted).length },
   ]
 
@@ -490,10 +517,10 @@ export function PipelineBoard({ leadsLL: initLL, leadsSL: initSL, kiepersol: ini
       </div>
 
       {tab === 'll' && (
-        <KanbanBoard leads={filteredLL} pipeline="ll" waConfigured={waConfigured} onUpdate={(id, u) => updateLeads('ll', id, u)} />
+        <KanbanBoard leads={filteredLL} pipeline="ll" waConfigured={waConfigured} onUpdate={(id, u, m) => updateLeads('ll', id, u, m)} onRemove={id => removeLead('ll', id)} />
       )}
       {tab === 'sl' && (
-        <KanbanBoard leads={filteredSL} pipeline="sl" waConfigured={waConfigured} onUpdate={(id, u) => updateLeads('sl', id, u)} />
+        <KanbanBoard leads={filteredSL} pipeline="sl" waConfigured={waConfigured} onUpdate={(id, u, m) => updateLeads('sl', id, u, m)} onRemove={id => removeLead('sl', id)} />
       )}
       {tab === 'kiepersol' && (
         <KiepersrolList

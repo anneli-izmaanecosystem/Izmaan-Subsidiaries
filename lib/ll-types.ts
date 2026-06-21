@@ -5,6 +5,7 @@ export type LeadStage =
   | 'Onboarding'
   | 'Implementing'
   | 'Active Client'
+  | 'Churned'
 
 export type Priority = 'high' | 'medium' | 'low'
 export type LeadType = 'll' | 'sl' | 'kiepersol'
@@ -24,6 +25,7 @@ export interface Lead {
   type: LeadType
   contacted?: boolean   // kiepersol only
   revenue?: number      // active clients: monthly ZAR revenue
+  churnReason?: string  // churned leads only
 }
 
 export interface KPIEntry {
@@ -54,6 +56,33 @@ export interface SLOnboardingRecord {
   notes: string
   createdAt: string
   updatedAt: string
+  leadId?: string  // linked SL pipeline lead
+}
+
+export type LLOnboardingStage =
+  | 'info-requested'
+  | 'info-received'
+  | 'technical-setup'
+  | 'review'
+  | 'ready'
+
+export interface LLOnboardingRecord {
+  id: string
+  farmName: string
+  area: string
+  contactName: string
+  contactPhone: string
+  contactEmail: string
+  billingAddress: string
+  pinLocation: string
+  staffCount: number
+  csvReceived: boolean
+  stage: LLOnboardingStage
+  activeClientConfirmed?: boolean
+  notes: string
+  createdAt: string
+  updatedAt: string
+  leadId?: string
 }
 
 export interface ActionItem {

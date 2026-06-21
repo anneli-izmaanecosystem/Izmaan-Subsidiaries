@@ -4,11 +4,11 @@ import { useState, useEffect } from 'react'
 import { X, MessageCircle, Send, CheckCheck, Check, Clock } from 'lucide-react'
 import type { Lead, LeadStage, LeadType } from '@/lib/ll-types'
 import type { WAMessage } from '@/lib/ll-whatsapp'
-import { getTemplateForStage, formatWAUrl, TEMPLATES } from '@/lib/ll-templates'
+import { getTemplateForStage, formatWAUrl, TEMPLATES, type Template } from '@/lib/ll-templates'
 import { cn } from '@/lib/utils'
 
-const STAGES_LL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Onboarding', 'Active Client']
-const STAGES_SL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Implementing', 'Active Client']
+const STAGES_LL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Onboarding', 'Active Client', 'Churned']
+const STAGES_SL: LeadStage[] = ['New Lead', 'Contacted', 'Meeting Done', 'Implementing', 'Active Client', 'Churned']
 const STAGE_COLORS: Record<string, string> = {
   'New Lead':      '#7a8199',
   'Contacted':     '#3a6bef',
@@ -16,7 +16,19 @@ const STAGE_COLORS: Record<string, string> = {
   'Onboarding':    '#d4860a',
   'Implementing':  '#d4860a',
   'Active Client': '#18a86b',
+  'Churned':       '#9ca3af',
 }
+
+const CHURN_REASONS = [
+  'Too expensive',
+  'Chose competitor',
+  'No budget / cashflow',
+  'Timing not right',
+  'No decision maker access',
+  'Lost contact / unresponsive',
+  'Not a fit',
+  'Other',
+]
 
 function StatusIcon({ status }: { status: WAMessage['status'] }) {
   if (status === 'read')      return <CheckCheck size={11} className="text-[#3a6bef]" />
@@ -26,23 +38,34 @@ function StatusIcon({ status }: { status: WAMessage['status'] }) {
   return <Clock size={11} className="text-gray-300" />
 }
 
+const PIPELINE_LABELS: Record<string, string> = {
+  'll':        'Labour Link',
+  'sl':        'Safe Link',
+  'kiepersol': 'Kiepersol',
+}
+
 interface Props {
   lead: Lead
   pipeline: 'll' | 'sl'
   waConfigured?: boolean
   onClose: () => void
-  onUpdate: (id: string, updates: Partial<Lead>) => void
+  onUpdate: (id: string, updates: Partial<Lead>, movedLead?: Lead) => void
+  onRemove?: () => void
 }
 
-export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: Props) {
-  const [localLead, setLocalLead] = useState(lead)
-  const [notes, setNotes] = useState(lead.notes)
-  const [blocker, setBlocker] = useState(lead.blocker)
-  const [lastContact, setLastContact] = useState(lead.lastContact)
-  const [saving, setSaving] = useState(false)
+export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate, onRemove }: Props) {
+  const [localLead,     setLocalLead]     = useState(lead)
+  const [notes,         setNotes]         = useState(lead.notes)
+  const [blocker,       setBlocker]       = useState(lead.blocker)
+  const [lastContact,   setLastContact]   = useState(lead.lastContact)
+  const [churnReason,   setChurnReason]   = useState(lead.churnReason ?? '')
+  const [saving,        setSaving]        = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removing,      setRemoving]      = useState(false)
   const [tab, setTab] = useState<'details' | 'whatsapp'>('details')
 
   // WhatsApp tab state
+  const [templates, setTemplates] = useState<Template[]>(TEMPLATES)
   const [messages, setMessages] = useState<WAMessage[]>([])
   const [loadingMsgs, setLoadingMsgs] = useState(false)
   const [selectedTplId, setSelectedTplId] = useState<string>('')
@@ -53,6 +76,14 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
   const stages = pipeline === 'll' ? STAGES_LL : STAGES_SL
   const defaultTpl = getTemplateForStage(localLead.stage, pipeline, localLead.contact)
   const waFallbackUrl = localLead.phone ? formatWAUrl(localLead.phone, defaultTpl.text) : null
+
+  // Load live templates from Redis (static TEMPLATES used as initial fallback)
+  useEffect(() => {
+    fetch('/api/labour-link/templates')
+      .then(r => r.json())
+      .then((data: Template[]) => { if (Array.isArray(data)) setTemplates(data) })
+      .catch(() => {/* keep static fallback */})
+  }, [])
 
   useEffect(() => {
     if (tab !== 'whatsapp') return
@@ -66,11 +97,11 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
   // Populate message box when template is selected
   useEffect(() => {
     if (!selectedTplId) { setCustomText(''); return }
-    const tpl = TEMPLATES.find(t => t.id === selectedTplId)
+    const tpl = templates.find(t => t.id === selectedTplId)
     if (tpl) {
       setCustomText(tpl.text.replace(/\[NAAM\]/g, localLead.contact).replace(/\[NAME\]/g, localLead.contact))
     }
-  }, [selectedTplId, localLead.contact])
+  }, [selectedTplId, localLead.contact, templates])
 
   async function patch(updates: Partial<Lead>) {
     await fetch('/api/labour-link/leads', {
@@ -82,10 +113,39 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
     onUpdate(lead.id, updates)
   }
 
+  async function changeType(newType: LeadType) {
+    if (newType === localLead.type) return
+    setSaving(true)
+    const res = await fetch('/api/labour-link/leads', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: pipeline, id: lead.id, updates: { type: newType } }),
+    })
+    if (res.ok) {
+      const movedLead: Lead = await res.json()
+      onUpdate(lead.id, { type: newType }, movedLead)
+      onClose()
+    }
+    setSaving(false)
+  }
+
   async function saveDetails() {
     setSaving(true)
     await patch({ notes, blocker, lastContact })
     setSaving(false)
+  }
+
+  async function handleChurnReason(reason: string) {
+    setChurnReason(reason)
+    await patch({ churnReason: reason })
+  }
+
+  async function handleRemove() {
+    if (!confirmRemove) { setConfirmRemove(true); return }
+    setRemoving(true)
+    await fetch(`/api/labour-link/leads?type=${pipeline}&id=${lead.id}`, { method: 'DELETE' })
+    onRemove?.()
+    onClose()
   }
 
   async function sendMessage() {
@@ -148,6 +208,28 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'details' && (
             <div className="space-y-5">
+              {/* Pipeline (type) pills */}
+              <div>
+                <p className="mb-2 text-[10px] uppercase tracking-widest text-gray-400">Pipeline</p>
+                <div className="flex gap-2">
+                  {(['ll', 'sl', 'kiepersol'] as LeadType[]).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => changeType(t)}
+                      disabled={saving}
+                      className={cn(
+                        'rounded-full border px-3 py-1 text-[11px] transition-all disabled:opacity-50',
+                        localLead.type === t
+                          ? 'border-[#3a6bef] bg-[rgba(58,107,239,0.1)] text-[#3a6bef]'
+                          : 'border-[rgba(0,0,0,0.12)] text-gray-500 hover:border-[#3a6bef] hover:text-[#3a6bef]',
+                      )}
+                    >
+                      {PIPELINE_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Stage pills */}
               <div>
                 <p className="mb-2 text-[10px] uppercase tracking-widest text-gray-400">Stage</p>
@@ -165,7 +247,21 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
                 </div>
               </div>
 
-              {localLead.blocker && (
+              {localLead.stage === 'Churned' && (
+                <div>
+                  <p className="mb-2 text-[10px] uppercase tracking-widest text-gray-400">Churn Reason</p>
+                  <select
+                    value={churnReason}
+                    onChange={e => handleChurnReason(e.target.value)}
+                    className="w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] text-gray-600 focus:border-[#9ca3af] focus:outline-none"
+                  >
+                    <option value="">— Select reason —</option>
+                    {CHURN_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {localLead.blocker && localLead.stage !== 'Churned' && (
                 <div>
                   <p className="mb-1 text-[10px] uppercase tracking-widest text-gray-400">Current Blocker</p>
                   <p className="text-[12px] text-[#d4860a]">⚠ {localLead.blocker}</p>
@@ -192,6 +288,30 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
                 className="rounded-lg bg-[#3a6bef] px-4 py-1.5 text-[12px] text-white hover:opacity-85 disabled:opacity-50 transition-opacity">
                 {saving ? 'Saving…' : 'Save'}
               </button>
+
+              {onRemove && (
+                <div className="border-t border-[rgba(0,0,0,0.06)] pt-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleRemove}
+                      disabled={removing}
+                      className={cn(
+                        'rounded-lg border px-4 py-1.5 text-[12px] transition-all disabled:opacity-50',
+                        confirmRemove
+                          ? 'border-[#d93f3f] bg-[#d93f3f] text-white'
+                          : 'border-[rgba(217,63,63,0.4)] text-[#d93f3f] hover:bg-[rgba(217,63,63,0.06)]',
+                      )}
+                    >
+                      {removing ? 'Removing…' : confirmRemove ? 'Confirm Remove?' : 'Remove Lead'}
+                    </button>
+                    {confirmRemove && (
+                      <button onClick={() => setConfirmRemove(false)} className="text-[11px] text-gray-400 hover:text-gray-600">
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -234,7 +354,7 @@ export function LeadModal({ lead, pipeline, waConfigured, onClose, onUpdate }: P
                 <select value={selectedTplId} onChange={e => setSelectedTplId(e.target.value)}
                   className="mb-2 w-full rounded-lg border border-[rgba(0,0,0,0.12)] bg-[#f5f6f8] p-2.5 text-[12px] text-gray-600 focus:border-[#3a6bef] focus:outline-none">
                   <option value="">— Compose custom message —</option>
-                  {TEMPLATES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
                 <textarea value={customText} onChange={e => setCustomText(e.target.value)} rows={5}
                   placeholder="Type a message or select a template above..."
