@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     text: string
     outcome: InteractionOutcome
     notes: string
+    timestamp?: number
   }
 
   if (!body.leadId || !body.outcome) {
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   const entry: WAInteraction = {
     id: crypto.randomUUID(),
     leadId: body.leadId,
-    timestamp: Date.now(),
+    timestamp: body.timestamp ?? Date.now(),
     templateId: body.templateId,
     templateLabel: body.templateLabel,
     text: body.text ?? '',

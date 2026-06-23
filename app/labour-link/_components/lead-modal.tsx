@@ -86,6 +86,7 @@ export function LeadModal({ lead, pipeline, onClose, onUpdate, onRemove }: Props
   const [logOpen,          setLogOpen]          = useState(false)
   const [logOutcome,       setLogOutcome]       = useState<InteractionOutcome | ''>('')
   const [logNotes,         setLogNotes]         = useState('')
+  const [logDate,          setLogDate]          = useState(() => new Date().toISOString().split('T')[0])
   const [savingLog,        setSavingLog]        = useState(false)
 
   const stages = pipeline === 'll' ? STAGES_LL : STAGES_SL
@@ -186,6 +187,7 @@ export function LeadModal({ lead, pipeline, onClose, onUpdate, onRemove }: Props
     if (!logOutcome) return
     setSavingLog(true)
     const selectedTpl = templates.find(t => t.id === selectedTplId)
+    const timestamp = logDate ? new Date(logDate).getTime() : Date.now()
     const res = await fetch('/api/labour-link/interactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -196,6 +198,7 @@ export function LeadModal({ lead, pipeline, onClose, onUpdate, onRemove }: Props
         text:          customText,
         outcome:       logOutcome,
         notes:         logNotes,
+        timestamp,
       }),
     })
     if (res.ok) {
@@ -204,6 +207,7 @@ export function LeadModal({ lead, pipeline, onClose, onUpdate, onRemove }: Props
       setLogOpen(false)
       setLogOutcome('')
       setLogNotes('')
+      setLogDate(new Date().toISOString().split('T')[0])
     }
     setSavingLog(false)
   }
@@ -502,6 +506,17 @@ export function LeadModal({ lead, pipeline, onClose, onUpdate, onRemove }: Props
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Date */}
+                  <div className="mb-3">
+                    <p className="mb-1 text-[11px] text-gray-500">Date</p>
+                    <input
+                      type="date"
+                      value={logDate}
+                      onChange={e => setLogDate(e.target.value)}
+                      className="rounded-lg border border-[rgba(0,0,0,0.12)] bg-white p-2.5 text-[12px] focus:border-[#3a6bef] focus:outline-none"
+                    />
                   </div>
 
                   {/* Template used (read-only label) */}
