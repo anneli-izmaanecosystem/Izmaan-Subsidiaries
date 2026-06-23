@@ -1,5 +1,5 @@
 import { redis } from './redis'
-import type { Lead, KPIEntry, SLOnboardingRecord } from './ll-types'
+import type { Lead, KPIEntry, SLOnboardingRecord, LLOnboardingRecord, WAInteraction } from './ll-types'
 import { TEMPLATES, type Template } from './ll-templates'
 
 // ─── Redis keys ───────────────────────────────────────────────────────────────
@@ -92,6 +92,35 @@ export async function deleteTemplate(id: string): Promise<void> {
   await setTemplates(templates.filter(t => t.id !== id))
 }
 
+// ─── Interaction logs ─────────────────────────────────────────────────────────
+function interactionKey(leadId: string) { return `ll:interactions:${leadId}` }
+
+export async function getInteractions(leadId: string): Promise<WAInteraction[]> {
+  return (await redis.get<WAInteraction[]>(interactionKey(leadId))) ?? []
+}
+
+export async function addInteraction(entry: WAInteraction): Promise<void> {
+  const existing = await getInteractions(entry.leadId)
+  await redis.set(interactionKey(entry.leadId), [entry, ...existing])
+}
+
+// ─── Move lead across pipelines ───────────────────────────────────────────────
+export async function moveLead(
+  fromType: 'll' | 'sl' | 'kiepersol',
+  toType:   'll' | 'sl' | 'kiepersol',
+  id: string,
+  extraUpdates: Partial<Lead> = {},
+): Promise<Lead | null> {
+  const from = await getLeads(fromType)
+  const i = from.findIndex(l => l.id === id)
+  if (i === -1) return null
+
+  const lead: Lead = { ...from[i], ...extraUpdates, type: toType }
+  await setLeads(fromType, from.filter(l => l.id !== id))
+  await setLeads(toType, [...(await getLeads(toType)), lead])
+  return lead
+}
+
 // ─── SafeLink Onboarding ──────────────────────────────────────────────────────
 const OB_KEY = 'sl:onboarding'
 
@@ -110,6 +139,26 @@ export async function upsertOnboardingRecord(record: SLOnboardingRecord): Promis
 export async function deleteOnboardingRecord(id: string): Promise<void> {
   const records = await getOnboardingRecords()
   await redis.set(OB_KEY, records.filter(r => r.id !== id))
+}
+
+// ─── Labour Link Onboarding ───────────────────────────────────────────────────
+const LL_OB_KEY = 'll:onboarding'
+
+export async function getLLOnboardingRecords(): Promise<LLOnboardingRecord[]> {
+  return (await redis.get<LLOnboardingRecord[]>(LL_OB_KEY)) ?? []
+}
+
+export async function upsertLLOnboardingRecord(record: LLOnboardingRecord): Promise<void> {
+  const records = await getLLOnboardingRecords()
+  const i = records.findIndex(r => r.id === record.id)
+  if (i === -1) records.push(record)
+  else records[i] = record
+  await redis.set(LL_OB_KEY, records)
+}
+
+export async function deleteLLOnboardingRecord(id: string): Promise<void> {
+  const records = await getLLOnboardingRecords()
+  await redis.set(LL_OB_KEY, records.filter(r => r.id !== id))
 }
 
 // ─── Seed ─────────────────────────────────────────────────────────────────────

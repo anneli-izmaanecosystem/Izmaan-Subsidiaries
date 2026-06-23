@@ -97,3 +97,20 @@ export interface ActionItem {
   leadId?: string
   pipeline?: LeadType
 }
+
+export type InteractionOutcome =
+  | 'responded'
+  | 'no-response'
+  | 'follow-up'
+  | 'wrong-number'
+
+export interface WAInteraction {
+  id: string
+  leadId: string
+  timestamp: number
+  templateId?: string
+  templateLabel?: string
+  text: string
+  outcome: InteractionOutcome
+  notes: string
+}
