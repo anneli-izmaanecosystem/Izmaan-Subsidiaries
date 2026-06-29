@@ -1,0 +1,1 @@
+InvoiceNo;Customer;InvoiceDate;Terms;Item;Qty;Rate;Amount;TaxCode;ServiceDate;Description;;;Licence;Driver;IN DateTime;OUT DateTime;Trip Type;Notes / Flags

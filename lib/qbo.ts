@@ -153,7 +153,9 @@ function parseReportRows(report: any): Transaction[] {
         const vals   = row.ColData.map((c: any) => c.value ?? '')
         const idx    = (title: string) => columns.findIndex(c => c.toLowerCase().includes(title.toLowerCase()))
         const txType = vals[idx('type')] ?? ''
-        const rawAmt = parseFloat(vals[idx('net_amount')] ?? vals[idx('amount')] ?? '0') || 0
+        // subt_nat_amount carries the actual signed amount for all types incl. payments
+        // net_amount is 0 for payments (it's an income/expense field, not an AR field)
+        const rawAmt = parseFloat(vals[idx('subt_nat_amount')] ?? vals[idx('net_amount')] ?? vals[idx('amount')] ?? '0') || 0
 
         // Force credits to be negative so they reduce the running balance
         const isCredit = CREDIT_TX_TYPES.some(t => txType.toLowerCase().includes(t))
@@ -162,7 +164,7 @@ function parseReportRows(report: any): Transaction[] {
         rows.push({
           date:    vals[idx('date')]  ?? '',
           type:    txType,
-          num:     vals[idx('num')]   ?? '',
+          num:     vals[idx('num')] ?? vals[idx('doc_num')] ?? vals[idx('doc')] ?? '',
           memo:    vals[idx('memo')]  ?? vals[idx('name')] ?? '',
           amount,
           balance: 0, // calculated below
@@ -198,7 +200,7 @@ export async function getCustomerStatement(
     start_date: startDate,
     end_date:   endDate,
     customer:   customerId,
-    columns:    'tx_date,txn_type,doc_num,name,memo,net_amount',
+    columns:    'tx_date,txn_type,doc_num,name,memo,subt_nat_amount,net_amount',
   })
 
   const rawTxs = parseReportRows(report)
