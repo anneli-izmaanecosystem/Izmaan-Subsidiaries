@@ -113,11 +113,11 @@ export function StatementViewer({ statement }: { statement: CustomerStatement })
         <h3 className="text-sm font-medium text-gray-500 mb-4">Ageing Summary</h3>
         <div className="grid grid-cols-5 gap-4">
           {[
-            { label: 'Current (0–30d)', value: ageing.current },
-            { label: '31–60 days',      value: ageing.days30  },
-            { label: '61–90 days',      value: ageing.days60  },
-            { label: '91–120 days',     value: ageing.days90  },
-            { label: 'Over 120 days',   value: ageing.over90  },
+            { label: 'Current',       value: ageing.current },
+            { label: '1–30 days',     value: ageing.days1to30  },
+            { label: '31–60 days',    value: ageing.days31to60 },
+            { label: '61–90 days',    value: ageing.days61to90 },
+            { label: 'Over 90 days',  value: ageing.over90  },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-lg border border-gray-100 bg-gray-50 p-4">
               <p className="text-xs text-gray-400">{label}</p>

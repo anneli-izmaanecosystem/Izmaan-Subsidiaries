@@ -37,7 +37,7 @@ export interface CustomerStatement {
   openingBalance: number
   transactions: Transaction[]
   closingBalance: number
-  ageing: { current: number; days30: number; days60: number; days90: number; over90: number }
+  ageing: { current: number; days1to30: number; days31to60: number; days61to90: number; over90: number }
 }
 
 // ── OAuth state helpers (CSRF protection) ────────────────────────────────────
@@ -178,6 +178,26 @@ function parseReportRows(report: any): Transaction[] {
   return rows
 }
 
+// AgedReceivables buckets by due date against actual open balances (QBO does the
+// invoice/payment matching) — this must NOT be derived from a period-scoped
+// transaction list, since an unpaid invoice from before the statement's start
+// date would then never land in any bucket.
+function parseAgedReceivables(report: any) {
+  const zero = { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, over90: 0 }
+  const row = report.Rows?.Row?.find((r: any) => Array.isArray(r.ColData))
+  if (!row) return zero
+
+  const num = (i: number) => parseFloat(row.ColData[i]?.value ?? '0') || 0
+  // Columns: 0 = Customer, 1 = Current, 2 = 1-30, 3 = 31-60, 4 = 61-90, 5 = 91 and over, 6 = Total
+  return {
+    current:    num(1),
+    days1to30:  num(2),
+    days31to60: num(3),
+    days61to90: num(4),
+    over90:     num(5),
+  }
+}
+
 export async function getCustomerStatement(
   customerId: string,
   startDate: string,
@@ -216,19 +236,15 @@ export async function getCustomerStatement(
     return { ...tx, balance: running }
   })
 
-  // Ageing calculation (based on today vs transaction date)
-  const today = new Date()
-  const ageing = { current: 0, days30: 0, days60: 0, days90: 0, over90: 0 }
-  for (const tx of transactions) {
-    if (tx.amount <= 0) continue
-    const txDate = new Date(tx.date)
-    const days = Math.floor((today.getTime() - txDate.getTime()) / 86_400_000)
-    if (days <= 30)       ageing.current += tx.amount
-    else if (days <= 60)  ageing.days30  += tx.amount
-    else if (days <= 90)  ageing.days60  += tx.amount
-    else if (days <= 120) ageing.days90  += tx.amount
-    else                  ageing.over90  += tx.amount
-  }
+  // Ageing as of the statement's end date, from QBO's own AgedReceivables report
+  // (correctly matches invoices to payments/credits and buckets by due date —
+  // a hand-rolled bucketing of just this period's transactions would miss any
+  // balance carried in from before startDate).
+  const agedReport = await qboGet('reports/AgedReceivables', {
+    customer:    customerId,
+    report_date: endDate,
+  })
+  const ageing = parseAgedReceivables(agedReport)
 
   return {
     customer: { name: customer.DisplayName, balance: closingBalance },
