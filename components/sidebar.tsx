@@ -3,12 +3,13 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
-import { FileText, Settings, Truck } from 'lucide-react'
+import { FileText, Settings, Truck, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const nav = [
   { href: '/dashboard/statements',    label: 'Statements',    icon: FileText },
   { href: '/dashboard/road-invoicing', label: 'Road Invoicing', icon: Truck    },
+  { href: '/dashboard/payroll',       label: 'Payroll',       icon: Wallet   },
   { href: '/dashboard/settings',      label: 'Settings',      icon: Settings  },
 ]
 
