@@ -15,10 +15,16 @@ function monthLabel(ymd: string) {
   return new Date(y, m - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
 }
 
-function currentMonthRange() {
+function currentMonthYm() {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+// ym is 'YYYY-MM' (from an <input type="month">)
+function monthRangeFromYm(ym: string) {
+  const [y, m] = ym.split('-').map(Number)
+  const start = new Date(y, m - 1, 1)
+  const end   = new Date(y, m, 0)
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
 }
 
@@ -26,6 +32,8 @@ export default function PayrollPage() {
   const [runs, setRuns] = useState<Run[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [selectedYm, setSelectedYm] = useState(currentMonthYm())
 
   useEffect(() => {
     fetch('/api/payroll')
@@ -40,20 +48,27 @@ export default function PayrollPage() {
   }
 
   async function createRun() {
-    setCreating(true)
-    const { start, end } = currentMonthRange()
-    // If a run already exists for the current month, don't create a duplicate.
+    setCreateError('')
+    const { start, end } = monthRangeFromYm(selectedYm)
     if (runs.some(r => r.periodStart === start)) {
-      setCreating(false)
+      setCreateError(`A run for ${monthLabel(start)} already exists.`)
       return
     }
-    await fetch('/api/payroll', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ periodStart: start, periodEnd: end }),
-    })
-    await refetchRuns()
-    setCreating(false)
+    setCreating(true)
+    try {
+      const res = await fetch('/api/payroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ periodStart: start, periodEnd: end }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `Failed to create run (${res.status})`)
+      await refetchRuns()
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : 'Failed to create run')
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -72,11 +87,18 @@ export default function PayrollPage() {
           <Link href="/dashboard/payroll/coida-summary">
             <Button variant="outline" size="sm" className="gap-2"><FileSpreadsheet size={14} /> COIDA Summary</Button>
           </Link>
+          <input
+            type="month"
+            value={selectedYm}
+            onChange={e => { setSelectedYm(e.target.value); setCreateError('') }}
+            className="h-7 rounded-lg border border-gray-200 bg-white px-2 text-[0.8rem] text-gray-700"
+          />
           <Button size="sm" className="gap-2" onClick={createRun} disabled={creating}>
-            <Plus size={14} /> {creating ? 'Creating…' : 'New Run (this month)'}
+            <Plus size={14} /> {creating ? 'Creating…' : 'New Run'}
           </Button>
         </div>
       </div>
+      {createError && <p className="text-sm text-red-600">{createError}</p>}
 
       <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
         {loading ? (
@@ -85,7 +107,7 @@ export default function PayrollPage() {
             <Skeleton className="h-8 w-full" />
           </div>
         ) : runs.length === 0 ? (
-          <p className="p-8 text-center text-sm text-gray-400">No payroll runs yet — create one for the current month above.</p>
+          <p className="p-8 text-center text-sm text-gray-400">No payroll runs yet — pick a month above and create one.</p>
         ) : (
           <Table>
             <TableHeader>
