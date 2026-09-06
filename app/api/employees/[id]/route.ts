@@ -20,10 +20,19 @@ export async function PATCH(
   ]) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
+  // dateEngaged is a `date` column — an empty string (field left blank in the form)
+  // is not a valid date and would crash the update; treat it as "clear the field".
+  if (updates.dateEngaged === '') updates.dateEngaged = null
+
   if (body.rateMonth !== undefined) updates.rateMonth = String(body.rateMonth)
 
-  const [row] = await db.update(employees).set(updates).where(eq(employees.id, parseInt(id))).returning()
-  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const [row] = await db.update(employees).set(updates).where(eq(employees.id, parseInt(id))).returning()
+    if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  return NextResponse.json(row)
+    return NextResponse.json(row)
+  } catch (err) {
+    console.error('[employees PATCH]', err)
+    return NextResponse.json({ error: 'Failed to update employee' }, { status: 500 })
+  }
 }

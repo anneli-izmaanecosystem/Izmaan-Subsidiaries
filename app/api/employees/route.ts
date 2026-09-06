@@ -20,21 +20,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'name and rateMonth are required' }, { status: 400 })
   }
 
-  const [row] = await db.insert(employees).values({
-    employeeNumber: body.employeeNumber ?? null,
-    name:           body.name,
-    knownAs:        body.knownAs ?? null,
-    idNumber:       body.idNumber ?? null,
-    department:     body.department ?? null,
-    jobTitle:       body.jobTitle ?? null,
-    paypoint:       body.paypoint ?? null,
-    dateEngaged:    body.dateEngaged ?? null,
-    rateMonth:      String(body.rateMonth),
-    bankName:       body.bankName ?? null,
-    bankAccount:    body.bankAccount ?? null,
-    branchCode:     body.branchCode ?? null,
-    notes:          body.notes ?? null,
-  }).returning()
+  try {
+    const [row] = await db.insert(employees).values({
+      employeeNumber: body.employeeNumber ?? null,
+      name:           body.name,
+      knownAs:        body.knownAs ?? null,
+      idNumber:       body.idNumber ?? null,
+      department:     body.department ?? null,
+      jobTitle:       body.jobTitle ?? null,
+      paypoint:       body.paypoint ?? null,
+      dateEngaged:    body.dateEngaged || null, // an empty string is not a valid date — treat as unset
+      rateMonth:      String(body.rateMonth),
+      bankName:       body.bankName ?? null,
+      bankAccount:    body.bankAccount ?? null,
+      branchCode:     body.branchCode ?? null,
+      notes:          body.notes ?? null,
+    }).returning()
 
-  return NextResponse.json(row, { status: 201 })
+    return NextResponse.json(row, { status: 201 })
+  } catch (err) {
+    console.error('[employees POST]', err)
+    return NextResponse.json({ error: 'Failed to create employee' }, { status: 500 })
+  }
 }
